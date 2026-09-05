@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "antelligent"
+version = "3.0.0"
+description = "Simulazione ant-based di clustering/sorting: confronto euristica pre-impostata vs reinforcement learning (tesi magistrale)."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "GPL-3.0-or-later" }
+authors = [{ name = "Cristian Maieli" }]
+dependencies = ["pillow>=10"]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[project.scripts]
+antelligent = "antelligent.starter:main"
+antelligent-train = "antelligent.train:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["antelligent*"]
+
+[tool.setuptools.package-data]
+antelligent = ["resources/config.properties", "resources/images/**/*.png"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

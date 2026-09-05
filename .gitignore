@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+
+# Runtime output prodotto dalla simulazione (vedi README)
+results/*.txt
+results/screenshots/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# --- Vecchio progetto Java / tesi triennale ---
+# Il progetto Java e la tesi triennale sono nella cartella superiore
+# (../Antelligent, ../Antelligentold, ../Tesi.pdf): stanno FUORI da questo repo,
+# quindi Git non li vede comunque. I pattern qui sotto sono solo difensivi, nel
+# caso qualche file venisse copiato dentro AntelligentPy/ per errore.
+# NB: nessun pattern "Antelligent/" -- su Windows core.ignorecase=true e
+# nasconderebbe il package sorgente "antelligent/".
+Antelligentold/
+Tesi.pdf
+*.pdf
+# Artefatti e file IDE del vecchio progetto Java (non usati qui)
+*.class
+*.jar
+target/
+.idea/
+*.iml
+
+# --- Nessun riferimento all'assistente AI nel repo pubblico ---
+CLAUDE.md
+CLAUDE.local.md
+.claude/
+.claude.json
+.mcp.json
