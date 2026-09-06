@@ -18,6 +18,10 @@ class SimulationConfig:
     ``master_seed``: genera lo **stato iniziale condiviso** dalle due copie gemelle
     (euristica / RL). Se ``0`` viene sorteggiato un seed casuale a ogni run e
     stampato/salvato.
+
+    ``capture_screenshots``: se ``False`` (default) la run non cattura nulla.
+    La cattura (``ImageGrab``) blocca il thread della GUI e su macOS richiede il
+    permesso "Registrazione schermo", quindi e' opt-in dal launcher.
     """
 
     cols: int
@@ -32,3 +36,4 @@ class SimulationConfig:
     max_iterations: int
     entropy_threshold: float
     master_seed: int = 0
+    capture_screenshots: bool = False

@@ -75,8 +75,24 @@ class AntelligentLauncher(tk.Toplevel):
 
         self._update_stop_fields()
 
+        # --- Opzioni della run ---
+        options_frame = ttk.LabelFrame(content, text="Opzioni", padding=8)
+        options_frame.grid(row=2, column=0, sticky="ew", pady=(10, 0))
+
+        self._capture_var = tk.BooleanVar(value=bool(defaults.capture_screenshots))
+        ttk.Checkbutton(
+            options_frame,
+            text="Cattura schermate della finestra (results/screenshots/)",
+            variable=self._capture_var,
+        ).grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            options_frame,
+            text="Rallenta la simulazione; su macOS serve il permesso \"Registrazione schermo\".",
+            foreground="gray40",
+        ).grid(row=1, column=0, sticky="w", pady=(2, 0))
+
         start_button = ttk.Button(content, text="Avvia simulazione", command=self._on_start)
-        start_button.grid(row=2, column=0, sticky="e", pady=(12, 0))
+        start_button.grid(row=3, column=0, sticky="e", pady=(12, 0))
         self.bind("<Return>", lambda _event: self._on_start())
 
         self.update_idletasks()
@@ -169,6 +185,7 @@ class AntelligentLauncher(tk.Toplevel):
             max_iterations=max_iterations if max_iterations is not None else 20_000,
             entropy_threshold=entropy_threshold if entropy_threshold is not None else 5.0,
             master_seed=int(self._master_seed.get()),
+            capture_screenshots=bool(self._capture_var.get()),
         )
         self.destroy()
         self._on_launch(config)

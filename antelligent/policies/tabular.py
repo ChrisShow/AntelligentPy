@@ -11,6 +11,7 @@ ablazioni A1 (solo movimento RL) / A2 (solo manipolazione RL) / A3 (entrambe).
 
 from __future__ import annotations
 
+import logging
 import pickle
 import random
 from dataclasses import dataclass
@@ -21,7 +22,16 @@ from ..simulation.ant import Ant
 from .base import AntPolicyBase
 from .heuristic import HeuristicPolicy
 
+_LOGGER = logging.getLogger(__name__)
+
 _N_MOVES = 9  # 8 direzioni relative + STAY
+
+#: Versione della codifica dello stato. Va incrementata a ogni cambio di
+#: ``_move_state`` / ``_manip_state``: una tabella salvata con una codifica diversa
+#: non e' riutilizzabile (tutte le letture cadrebbero su righe vuote) e va
+#: riaddestrata. :meth:`TabularQPolicy.load` lo segnala invece di degradare in
+#: silenzio.
+_STATE_VERSION = 3
 
 
 @dataclass
@@ -34,6 +44,27 @@ class QConfig:
     learn_move: bool = True
     learn_manip: bool = True
     f_bins: int = 4
+    #: Se ``False`` (default) il "cervello" non puo' scegliere di **restare fermo**:
+    #: sceglie fra le 8 direzioni relative, come fa l'euristica
+    #: (:func:`check_move.random_move_index` non restituisce mai ``STAY`` su una
+    #: griglia normale). Con ``STAY`` disponibile la Q-learning cade in un punto
+    #: fisso assorbente: restare fermi non rischia mai ``contested_penalty``,
+    #: quindi e' l'azione meno costosa ovunque non ci sia una ricompensa positiva
+    #: raggiungibile, e ``Q(s,STAY) = -step_penalty/(1-gamma)`` si auto-sostiene.
+    #: La fisica gestisce comunque il "non riesco a muovermi" (contesa -> ripiego
+    #: -> resta ferma), quindi l'azione esplicita non serve.
+    allow_stay: bool = False
+    #: Rumore residuo in **inferenza** (politica congelata, GUI/benchmark).
+    #: L'osservazione e' parziale e fortemente aliasata: stati diversi del mondo
+    #: appaiono identici alla formica. Una politica *deterministica* su stati
+    #: aliasati cade in cicli limite (avanti-e-indietro fra le stesse celle) da cui
+    #: non puo' uscire, perche' la scelta dipende solo dall'osservazione. In un
+    #: POMDP la politica ottima e' in generale **stocastica**; anche l'euristica di
+    #: confronto lo e' (mossa estratta da una distribuzione, pick/drop
+    #: probabilistici), quindi il paragone resta equo. Misurato su questo scenario:
+    #: da ``0.00`` a ``0.05`` l'entropia finale passa da 44.7 a 36.6 e i ritorni
+    #: sulla cella ``t-2`` da 30 % a 21 %. Mettere ``0.0`` per la greedy pura.
+    inference_epsilon: float = 0.05
 
 
 class TabularQPolicy(AntPolicyBase):
@@ -60,6 +91,16 @@ class TabularQPolicy(AntPolicyBase):
     def _needs_heuristic(self) -> bool:
         return not (self.config.learn_move and self.config.learn_manip)
 
+    @property
+    def _n_move_actions(self) -> int:
+        """Mosse selezionabili: 9 con ``STAY``, altrimenti solo le 8 direzioni reali.
+
+        Le righe di ``q_move`` restano lunghe 9 (compatibilita' dei pickle): la
+        colonna di ``STAY`` semplicemente non viene ne' scelta ne' usata per il
+        bootstrap quando ``allow_stay`` e' ``False``.
+        """
+        return _N_MOVES if self.config.allow_stay else _N_MOVES - 1
+
     def bind_environment(self, env: object) -> None:
         """Lega un fallback euristico all'ambiente corrente (serve solo per A1/A2)."""
         self._heuristic = HeuristicPolicy(env.matrix, self.seed_types)  # type: ignore[attr-defined]
@@ -69,19 +110,40 @@ class TabularQPolicy(AntPolicyBase):
     # ------------------------------------------------------------------ #
 
     def _move_state(self, obs: Observation) -> tuple:
+        """Stato per la testa del movimento: *dove* conviene andare e *cosa* e' bloccato.
+
+        Volutamente **non** contiene ``direction`` ne' ``carried_type``:
+
+        - le mosse sono gia' relative all'heading (avanti / dietro / dx / sx / ...),
+          quindi ``direction`` replicherebbe la stessa situazione su 4 stati distinti,
+          dividendo per 4 i dati per stato senza aggiungere informazione;
+        - dove andare e' gia' riassunto da ``best_dir``, che tiene conto del tipo
+          trasportato: il codice del tipo in se' non cambia la decisione di mossa.
+
+        Cosi' la tabella passa da ~92 000 stati a ~4 600, molto piu' apprendibili.
+        """
         return (
             int(obs.carrying),
-            obs.carried_type if obs.carrying else 0,
             obs.best_dir,
-            obs.direction,
             tuple(int(b) for b in obs.blocked),
         )
 
     def _manip_state(self, obs: Observation) -> tuple:
-        relevant = obs.carried_type if obs.carrying else 0
+        # Per il DROP conta il tipo trasportato; per il PICK il tipo del seme
+        # sotto la formica (non trasporta). Cosi' lo stato e' allineato al segnale
+        # di ricompensa, che dipende dai simili di *quel* tipo (vedi env._reward).
+        relevant = obs.carried_type if obs.carrying else obs.seed_here_type
+        f_own = obs.f_here[relevant]
         bins = self.config.f_bins
-        f_bin = min(bins - 1, int(obs.f_here[relevant] * bins))
-        return (int(obs.carrying), relevant, f_bin)
+        f_bin = min(bins - 1, int(f_own * bins))
+        # Il segno della ricompensa di manipolazione si ribalta esattamente al
+        # livello del caso (1/k, il ``pivot`` di ``RewardConfig``), che NON cade su
+        # un confine dei bin: con k=5 il pivot vale 0.2 e finisce dentro il bin
+        # [0, 0.25), dove il pick e' premiato a f=0.1 e punito a f=0.24. Senza
+        # questo bit lo stato non puo' rappresentare il confine decisionale, la Q
+        # media si appiattisce a ~0 e la testa resta indecisa (pochissimi pick).
+        above_chance = int(f_own >= 1.0 / max(1, self.seed_types))
+        return (int(obs.carrying), relevant, f_bin, above_chance)
 
     # ------------------------------------------------------------------ #
     # Selezione dell'azione
@@ -94,12 +156,13 @@ class TabularQPolicy(AntPolicyBase):
             table[state] = row
         return row
 
-    def _argmax(self, values: list[float]) -> int:
-        best_index, best_value = 0, float("-inf")
-        for index, value in enumerate(values):
-            if value > best_value:
-                best_value, best_index = value, index
-        return best_index
+    def _argmax(self, values: list[float], limit: Optional[int] = None) -> int:
+        head = values[:limit] if limit is not None else values
+        best_value = max(head)
+        winners = [index for index, value in enumerate(head) if value == best_value]
+        # Parita' (tipico: stato mai visitato, riga ancora [0, 0, ...]): scelta
+        # casuale invece di preferire sempre l'indice 0 (= no-op / prima direzione).
+        return winners[0] if len(winners) == 1 else self.rng.choice(winners)
 
     def select_action(self, obs: Observation, ant: Ant) -> Action:
         if self._needs_heuristic and self._heuristic is None:
@@ -107,14 +170,17 @@ class TabularQPolicy(AntPolicyBase):
                 "ablazione A1/A2 senza euristica di fallback: passa heuristic= o chiama bind_environment()"
             )
         fallback = self._heuristic.select_action(obs, ant) if self._heuristic is not None else None
-        exploring = (not self.frozen) and self.rng.random() < self.epsilon
+        # ``epsilon`` vale il decadimento in addestramento e ``inference_epsilon``
+        # una volta congelata: ``frozen`` sospende l'apprendimento, non il rumore.
+        exploring = self.rng.random() < self.epsilon
 
         # --- movimento ---
         move_state: Optional[tuple] = None
         if self.config.learn_move:
+            n_moves = self._n_move_actions
             move_state = self._move_state(obs)
             row = self._row(self.q_move, move_state, _N_MOVES)
-            move_index = self.rng.randrange(_N_MOVES) if exploring else self._argmax(row)
+            move_index = self.rng.randrange(n_moves) if exploring else self._argmax(row, n_moves)
         else:
             move_index = fallback.move_index  # type: ignore[union-attr]
 
@@ -151,7 +217,8 @@ class TabularQPolicy(AntPolicyBase):
 
         if move_state is not None:
             next_row = self._row(self.q_move, self._move_state(transition.next_obs), _N_MOVES)
-            target = reward + gamma * max(next_row) * keep
+            # il bootstrap usa solo le azioni davvero selezionabili
+            target = reward + gamma * max(next_row[: self._n_move_actions]) * keep
             row = self._row(self.q_move, move_state, _N_MOVES)
             row[move_index] += alpha * (target - row[move_index])
 
@@ -171,9 +238,14 @@ class TabularQPolicy(AntPolicyBase):
         self.epsilon = self.config.epsilon_start + frac * (self.config.epsilon_end - self.config.epsilon_start)
 
     def freeze(self) -> None:
-        """Congela la politica per l'inferenza (GUI / benchmark): niente esplorazione, niente update."""
+        """Congela la politica per l'inferenza (GUI / benchmark): niente piu' update.
+
+        Resta il rumore residuo ``inference_epsilon``, indispensabile per non
+        incastrarsi nei cicli limite indotti dagli stati aliasati (vedi
+        :class:`QConfig`). Con ``inference_epsilon = 0`` si ottiene la greedy pura.
+        """
         self.frozen = True
-        self.epsilon = 0.0
+        self.epsilon = self.config.inference_epsilon
 
     # ------------------------------------------------------------------ #
     # Persistenza
@@ -181,6 +253,7 @@ class TabularQPolicy(AntPolicyBase):
 
     def save(self, path) -> None:
         payload = {
+            "state_version": _STATE_VERSION,
             "seed_types": self.seed_types,
             "config": self.config,
             "q_move": self.q_move,
@@ -195,7 +268,16 @@ class TabularQPolicy(AntPolicyBase):
     def load(cls, path, *, heuristic: Optional[HeuristicPolicy] = None) -> "TabularQPolicy":
         with open(path, "rb") as handle:
             payload = pickle.load(handle)
+        version = payload.get("state_version", 1)
+        if version != _STATE_VERSION:
+            _LOGGER.warning(
+                "%s e' stata addestrata con la codifica di stato v%s, questa versione usa la v%s: "
+                "la tabella non e' riutilizzabile e la politica si comporterebbe a caso. "
+                "Riaddestrala con: python -m antelligent.train",
+                path, version, _STATE_VERSION,
+            )
         policy = cls(payload["seed_types"], payload["config"], heuristic=heuristic)
+        policy.state_version = version
         policy.q_move = payload["q_move"]
         policy.q_manip = payload["q_manip"]
         policy.episode = payload.get("episode", 0)

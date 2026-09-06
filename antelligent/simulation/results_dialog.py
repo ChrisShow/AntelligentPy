@@ -16,6 +16,8 @@ class SimulationResultsDialog(tk.Toplevel):
         owner: tk.Misc,
         results: Sequence[SimulationResult],
         on_new_simulation: Callable[[], None],
+        *,
+        with_screenshots: bool = False,
     ) -> None:
         super().__init__(owner)
         self.title("Simulazione completata")
@@ -52,11 +54,10 @@ class SimulationResultsDialog(tk.Toplevel):
             for col, result in enumerate(results, start=1):
                 ttk.Label(container, text=getter(result)).grid(row=i, column=col, padx=8, pady=2)
 
-        note = ttk.Label(
-            container,
-            text="Risultati salvati in results/results.txt, screenshot in results/screenshots/",
-            font=("TkDefaultFont", 8, "italic"),
-        )
+        note_text = "Risultati salvati in results/results.txt"
+        if with_screenshots:
+            note_text += ", screenshot in results/screenshots/"
+        note = ttk.Label(container, text=note_text, font=("TkDefaultFont", 8, "italic"))
         note.grid(row=3 + len(rows), column=0, columnspan=1 + len(results), pady=(12, 8))
 
         buttons = ttk.Frame(container)

@@ -44,6 +44,7 @@ class AntelligentStarter:
             max_iterations=_read_int(properties, "maxIterations"),
             entropy_threshold=_read_float(properties, "entropyThreshold"),
             master_seed=_read_int(properties, "masterSeed"),
+            capture_screenshots=_read_bool(properties, "captureScreenshots"),
         )
 
     def _load_properties(self) -> dict[str, str]:
@@ -73,6 +74,8 @@ class AntelligentStarter:
             f"entropyThreshold={config.entropy_threshold}\n"
             "# Seed dello stato iniziale condiviso dalle due copie (euristica / RL). 0 = casuale a ogni run.\n"
             f"masterSeed={config.master_seed}\n"
+            "# Cattura periodica di schermate della finestra in results/screenshots/ (0 = no, 1 = si').\n"
+            f"captureScreenshots={1 if config.capture_screenshots else 0}\n"
         )
         try:
             paths.CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -105,6 +108,11 @@ def _read_int(properties: dict[str, str], key: str) -> int:
         return int(properties.get(key, "0"))
     except ValueError:
         return 0
+
+
+def _read_bool(properties: dict[str, str], key: str) -> bool:
+    """Accetta ``1``/``true``/``yes``/``on`` (case-insensitive); assente o altro = ``False``."""
+    return properties.get(key, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _read_float(properties: dict[str, str], key: str) -> float:

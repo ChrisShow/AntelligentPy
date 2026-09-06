@@ -12,6 +12,7 @@ solo dal thread principale via ``root.after``.
 from __future__ import annotations
 
 import logging
+import queue
 import random
 import sys
 import threading
@@ -28,6 +29,7 @@ from .. import paths
 from ..config import SimulationConfig
 from ..environment import Environment
 from ..policies.heuristic import HeuristicPolicy
+from ..policies.lumer_tabular import load_policy
 from ..policies.tabular import QConfig, TabularQPolicy
 from ..seeds.seed import BLANK_SEED_IMAGE
 from ..seeds.seed_type import SeedType
@@ -44,6 +46,23 @@ _RESULTS_HEADER = (
 )
 _SCREENSHOT_EVERY_N_ITERATIONS = 200
 
+#: Ogni quanti ms il thread principale drena la coda degli eventi dei worker.
+#: Tkinter non e' thread-safe e ``root.after`` da un thread worker solleva
+#: ``RuntimeError: main thread is not in main loop``: i worker quindi non toccano
+#: Tk, accodano un evento e basta.
+_EVENT_POLL_MS = 50
+_EV_RENDER, _EV_SCREENSHOT, _EV_FINISHED = "render", "screenshot", "finished"
+
+# Stati di una copia: le run sono SEQUENZIALI (prima l'euristica, poi l'RL), quindi
+# una copia e' "in attesa" finche' l'altra non ha finito.
+_WAITING, _RUNNING, _DONE = "waiting", "running", "done"
+
+#: Etichetta della riga del tempo, diversa per copia (cosi' i due cronometri non si
+#: confondono) e testo/colore dello stato accanto al valore.
+_TIME_ROW_LABEL = {"heuristic": "tempo euristica", "rl": "tempo RL"}
+_STATUS_TEXT = {_WAITING: "in attesa", _RUNNING: "in corso", _DONE: "conclusa"}
+_STATUS_COLOR = {_WAITING: "gray50", _RUNNING: "#1a6f1a", _DONE: "#8a4b00"}
+
 
 class _Pane:
     def __init__(self, mode: str, label: str, env: Environment, policy: object) -> None:
@@ -56,11 +75,16 @@ class _Pane:
         self.stat_moves: Optional[ttk.Label] = None
         self.stat_seeds: Optional[ttk.Label] = None
         self.stat_entropy: Optional[ttk.Label] = None
+        self.title_label: Optional[ttk.Label] = None
         self.worker: Optional[threading.Thread] = None
         self.start_time: Optional[float] = None
         self.duration_ms = 0
-        self.done = False
+        self.status = _WAITING
         self.ticks_since_paint = 0
+
+    @property
+    def done(self) -> bool:
+        return self.status == _DONE
 
 
 class ComparisonSimulation:
@@ -98,6 +122,8 @@ class ComparisonSimulation:
         self._screenshot_number = 0
         self._formatted_datetime = ""
         self._board_images: list[Image.Image] = []
+        # handoff worker -> thread principale (i worker non chiamano mai Tk)
+        self._events: "queue.Queue[tuple[str, Optional[_Pane]]]" = queue.Queue()
 
         self._cell_side = self._compute_cell_side()
         self._build_gui()
@@ -116,7 +142,9 @@ class ComparisonSimulation:
         heuristic = HeuristicPolicy(env.matrix, config.seed_types)
         if rl_policy_path is not None and Path(rl_policy_path).is_file():
             try:
-                policy = TabularQPolicy.load(rl_policy_path, heuristic=heuristic)
+                # load_policy sceglie la classe dalla famiglia scritta nel pickle
+                # (tabellare base o variante Lumer-Faieta): codifiche di stato diverse.
+                policy = load_policy(rl_policy_path, heuristic=heuristic)
                 policy.freeze()
                 return policy, "RL (addestrata)"
             except Exception:  # noqa: BLE001
@@ -147,9 +175,10 @@ class ComparisonSimulation:
         board_h = self._cell_side * self._config.rows + 20
 
         for col, pane in enumerate(self._panes):
-            ttk.Label(self._toplevel, text=pane.label, font=("TkDefaultFont", 11, "bold")).grid(
-                row=0, column=col, pady=(8, 2)
+            pane.title_label = ttk.Label(
+                self._toplevel, text=pane.label, font=("TkDefaultFont", 11, "bold")
             )
+            pane.title_label.grid(row=0, column=col, pady=(8, 2))
             pane.canvas = tk.Canvas(
                 self._toplevel, width=board_w, height=board_h, background="white", highlightthickness=0
             )
@@ -158,7 +187,7 @@ class ComparisonSimulation:
 
             stats = ttk.Frame(self._toplevel, padding=(6, 4))
             stats.grid(row=2, column=col, sticky="ew")
-            pane.stat_time = self._add_stat(stats, 0, "tempo")
+            pane.stat_time = self._add_stat(stats, 0, _TIME_ROW_LABEL.get(pane.mode, "tempo"))
             pane.stat_moves = self._add_stat(stats, 1, "mosse totali")
             pane.stat_seeds = self._add_stat(stats, 2, "semi raccolti")
             pane.stat_entropy = self._add_stat(stats, 3, "entropia totale")
@@ -175,6 +204,7 @@ class ComparisonSimulation:
         self._toplevel.update_idletasks()
         self._center_window()
         self._refresh_stats()
+        self._pump_events()
 
     @staticmethod
     def _add_stat(parent: ttk.Frame, row: int, name: str) -> ttk.Label:
@@ -231,28 +261,84 @@ class ComparisonSimulation:
         except tk.TclError:
             pass
 
-    def _schedule_render(self, pane: _Pane) -> None:
-        if self._gui_visible:
-            self._schedule(self._draw_pane, pane)
+    # ------------------------------------------------------------------ #
+    # Handoff worker -> thread principale
+    # ------------------------------------------------------------------ #
 
-    def _schedule(self, func: Callable[..., None], *args: object) -> None:
+    def _post(self, event: str, pane: Optional[_Pane] = None) -> None:
+        """Chiamabile dai worker: accoda e basta, nessuna chiamata a Tk."""
+        self._events.put((event, pane))
+
+    def _pump_events(self) -> None:
+        """Drena la coda sul thread principale, l'unico che puo' toccare Tk.
+
+        Il riarmo del timer e' in ``finally``: se una callback fallisce il pump
+        **non** deve morire, altrimenti gli eventi successivi (fra cui la fine di
+        una copia) resterebbero in coda per sempre e la run si pianterebbe.
+        """
         try:
-            self._root.after(0, func, *args)
-        except (RuntimeError, tk.TclError):
-            pass
+            while True:
+                try:
+                    event, pane = self._events.get_nowait()
+                except queue.Empty:
+                    break
+                try:
+                    if event == _EV_RENDER and self._gui_visible and pane is not None:
+                        self._draw_pane(pane)
+                    elif event == _EV_SCREENSHOT:
+                        self._take_screenshot()
+                    elif event == _EV_FINISHED and pane is not None:
+                        self._pane_finished(pane)
+                except tk.TclError:
+                    return  # finestra distrutta: inutile insistere
+                except Exception:  # noqa: BLE001
+                    _LOGGER.exception("errore gestendo l'evento %r", event)
+        finally:
+            if not self._closing:
+                try:
+                    self._root.after(_EVENT_POLL_MS, self._pump_events)
+                except (RuntimeError, tk.TclError):
+                    pass
 
-    def _refresh_stats(self) -> None:
+    @staticmethod
+    def _mmss(seconds: float) -> str:
+        total = max(0, int(seconds))
+        return f"{total // 60:02d}:{total % 60:02d}"
+
+    def _elapsed_seconds(self, pane: _Pane) -> float:
+        """Cronometro della copia: **fermo** al valore finale una volta conclusa."""
+        if pane.status == _DONE:
+            return pane.duration_ms / 1000.0
+        if pane.status == _RUNNING and pane.start_time is not None:
+            return time.monotonic() - pane.start_time
+        return 0.0  # in attesa: non e' ancora partita
+
+    def _time_text(self, pane: _Pane) -> str:
+        state = _STATUS_TEXT[pane.status]
+        if pane.status == _WAITING:
+            return f"--:--  ({state})"
+        return f"{self._mmss(self._elapsed_seconds(pane))}  ({state})"
+
+    def _update_stat_labels(self) -> None:
         for pane in self._panes:
             if pane.stat_time is None:
                 continue
             try:
-                elapsed = int(time.monotonic() - pane.start_time) if pane.start_time else 0
-                pane.stat_time.config(text=f"{elapsed // 60:02d}:{elapsed % 60:02d}")
+                pane.stat_time.config(text=self._time_text(pane),
+                                      foreground=_STATUS_COLOR[pane.status])
                 pane.stat_moves.config(text=f"{pane.env.total_moves}")
                 pane.stat_seeds.config(text=f"{pane.env.seeds_collected}")
                 pane.stat_entropy.config(text=f"{pane.env.entropy:.1f}")
+                if pane.title_label is not None:
+                    pane.title_label.config(text=f"{pane.label} - {_STATUS_TEXT[pane.status]}")
             except tk.TclError:
                 return
+
+    def _refresh_stats(self) -> None:
+        self._update_stat_labels()
+        # Tutte le copie concluse: le etichette restano congelate, niente altro timer.
+        if self._started and all(pane.status == _DONE for pane in self._panes):
+            return
         try:
             self._root.after(1000, self._refresh_stats)  # 1 Hz: non a decimi/millesimi
         except (RuntimeError, tk.TclError):
@@ -263,6 +349,8 @@ class ComparisonSimulation:
     # ------------------------------------------------------------------ #
 
     def _take_screenshot(self) -> None:
+        if not self._config.capture_screenshots:
+            return
         try:
             self._toplevel.update_idletasks()
             x, y = self._toplevel.winfo_rootx(), self._toplevel.winfo_rooty()
@@ -272,6 +360,8 @@ class ComparisonSimulation:
             _LOGGER.warning("Impossibile catturare lo screenshot", exc_info=True)
 
     def _save_screenshots(self, datetime_str: str) -> None:
+        if not self._config.capture_screenshots or not self._board_images:
+            return
         try:
             directory = paths.SCREENSHOTS_DIR / datetime_str
             directory.mkdir(parents=True, exist_ok=True)
@@ -286,9 +376,37 @@ class ComparisonSimulation:
     # Loop di simulazione (un thread per copia)
     # ------------------------------------------------------------------ #
 
+    def _start_next_pane(self) -> None:
+        """Avvia la prossima copia **in coda**, o conclude se non ce ne sono piu'.
+
+        Le due run non si sovrappongono: l'RL parte solo quando l'euristica ha
+        finito. Cosi' il tempo di ciascuna copia e' misurato su una macchina
+        scarica, senza contesa del GIL con l'altra griglia.
+        Da chiamare solo sul thread principale.
+        """
+        if self._closing or self._stop_requested:
+            return
+        for pane in self._panes:
+            if pane.status == _WAITING:
+                pane.status = _RUNNING
+                pane.start_time = time.monotonic()
+                self._update_stat_labels()
+                pane.worker = threading.Thread(
+                    target=self._run_pane, args=(pane,), name=f"sim-{pane.mode}", daemon=True
+                )
+                pane.worker.start()
+                return
+        self._maybe_finish()
+
+    def _pane_finished(self, pane: _Pane) -> None:
+        """Chiusura di una copia (thread principale): congela le etichette e passa alla prossima."""
+        pane.status = _DONE
+        self._update_stat_labels()  # cronometro fermo sul valore finale, subito
+        self._draw_pane(pane)
+        self._start_next_pane()
+
     def _run_pane(self, pane: _Pane) -> None:
         cfg = self._config
-        pane.start_time = time.monotonic()
         while not self._stop_requested:
             try:
                 pane.env.tick(pane.policy)
@@ -297,16 +415,15 @@ class ComparisonSimulation:
             pane.ticks_since_paint += 1
             if pane.ticks_since_paint >= self._refresh_rate:
                 pane.ticks_since_paint = 0
-                self._schedule_render(pane)
-            if pane.env.iterations % _SCREENSHOT_EVERY_N_ITERATIONS == 0:
-                self._schedule(self._take_screenshot)
+                self._post(_EV_RENDER, pane)
+            if self._config.capture_screenshots and pane.env.iterations % _SCREENSHOT_EVERY_N_ITERATIONS == 0:
+                self._post(_EV_SCREENSHOT)
             if pane.env.is_done(cfg.stop_criterion, cfg.max_iterations, cfg.entropy_threshold):
                 break
         pane.env.refresh_entropy()
         pane.duration_ms = int((time.monotonic() - (pane.start_time or time.monotonic())) * 1000)
-        pane.done = True
-        self._schedule(self._draw_pane, pane)
-        self._schedule(self._maybe_finish)
+        # il passaggio a _DONE e l'avvio della copia successiva avvengono sul thread principale
+        self._post(_EV_FINISHED, pane)
 
     def _maybe_finish(self) -> None:
         if self._closing or self._finished:
@@ -319,7 +436,10 @@ class ComparisonSimulation:
         results = [self._result_for(pane) for pane in self._panes]
         for result in results:
             self._append_result(result)
-        SimulationResultsDialog(self._toplevel, results, self._handle_new_simulation)
+        SimulationResultsDialog(
+            self._toplevel, results, self._handle_new_simulation,
+            with_screenshots=self._config.capture_screenshots,
+        )
 
     def _result_for(self, pane: _Pane) -> SimulationResult:
         cfg = self._config
@@ -381,11 +501,7 @@ class ComparisonSimulation:
             self._started = True
             self._formatted_datetime = datetime.now().strftime("%Y-%m-%d %H-%M-%S")
             self._start_close_btn.config(text="Close")
-            for pane in self._panes:
-                pane.worker = threading.Thread(
-                    target=self._run_pane, args=(pane,), name=f"sim-{pane.mode}", daemon=True
-                )
-                pane.worker.start()
+            self._start_next_pane()  # una copia alla volta, in ordine
         else:
             self._quit_now()
 

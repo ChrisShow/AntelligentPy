@@ -36,11 +36,15 @@ class Observation:
     carrying: bool
     carried_type: int          # codice del seme trasportato, 0 se non trasporta
     seed_here: bool            # c'e' un seme sulla cella della formica
+    seed_here_type: int        # codice del seme sulla cella della formica, 0 se non c'e'
     can_pick: bool             # non trasporta ed e' su un seme
     can_drop: bool             # trasporta e la sua cella e' libera da semi
     f_here: tuple[float, ...]  # frazione di semi per tipo nelle 8 celle adiacenti
     blocked: tuple[bool, ...]  # per ognuna delle 8 direzioni relative: fuori griglia o cella occupata da una formica
-    best_dir: int              # direzione (0-7) del vicino con piu' semi del tipo trasportato, 8 se non applicabile
+    #: Gradiente locale, direzione relativa 0-7 (``STAY`` = nessun bersaglio in vista):
+    #: trasportando, la cella *vuota* piu' circondata da semi del tipo in mano (dove
+    #: posare bene); a mani libere, la cella col seme piu' fuori posto (da raccogliere).
+    best_dir: int
     direction: int             # heading corrente (0-3)
     window: tuple[tuple[int, ...], ...]  # finestra categorica (2r+1)x(2r+1) per il deep RL
 

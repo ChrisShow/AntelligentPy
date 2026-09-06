@@ -45,17 +45,27 @@ _CELL_OUT = -2
 class RewardConfig:
     """Pesi della ricompensa locale (``docs/rl-design.md`` §3.3). L'euristica li ignora.
 
-    La manipolazione e' premiata *rispetto a* ``pivot``: raccogliere un seme
-    isolato dai suoi simili (``f_own < pivot``) e posare un seme tra i suoi simili
-    (``f_own > pivot``) danno ricompensa positiva; il contrario e' penalizzato,
-    cosi' il "churn" (raccogli-e-riposa a caso) non conviene.
+    La manipolazione e' premiata *rispetto a* ``pivot`` (frazione di vicini dello
+    stesso tipo del seme manipolato): raccogliere un seme isolato dai suoi simili
+    (``f_own < pivot``) e posare un seme accanto ai suoi simili (``f_own >
+    pivot``) danno ricompensa positiva, il contrario e' penalizzato, cosi' il
+    "churn" (raccogli-e-riposa a caso) non conviene. E' lo stesso criterio di
+    decisione dell'euristica (Lumer-Faieta) trasformato in segnale denso.
+
+    ``pivot = None`` (default) lo calcola come **livello del caso**,
+    ``1 / seed_types``: su una cella a caso la frazione attesa di vicini dello
+    stesso tipo e' appunto ``1/k``, quindi il segno della ricompensa distingue
+    "meglio del caso" da "peggio del caso". Un valore fisso (es. ``0.5``) con
+    ``seed_types > 2`` rende il drop **sempre penalizzato in media**
+    (``1/k - 0.5 < 0``): la politica greedy impara a non posare mai e le formiche
+    restano bloccate con il seme in mano.
     """
 
     step_penalty: float = 0.01
     contested_penalty: float = 0.05
     invalid_penalty: float = 0.05
     manip_scale: float = 1.0
-    pivot: float = 0.5
+    pivot: Optional[float] = None  # None = livello del caso, 1/seed_types
     final_scale: float = 0.0  # bonus terminale alpha*(H0 - H_final): lo aggiunge il runner
 
 
@@ -79,12 +89,18 @@ class Environment:
         self.seeds = seeds
         self.seed_types = seed_types
         self.reward_cfg = reward or RewardConfig()
+        # pivot esplicito, oppure livello del caso 1/k (vedi RewardConfig)
+        self.pivot = (
+            self.reward_cfg.pivot if self.reward_cfg.pivot is not None
+            else 1.0 / max(1, seed_types)
+        )
         self.rng = rng or random.Random()
         self.window_radius = window_radius
         self.entropy_every = max(1, entropy_every)
 
         self.total_moves = 0
         self.seeds_collected = 0
+        self.drops_done = 0
         self.iterations = 0
 
         self._ant_cells: set[tuple[int, int]] = {(a.position.x, a.position.y) for a in ants}
@@ -125,12 +141,101 @@ class Environment:
     # Osservazione
     # ------------------------------------------------------------------ #
 
+    def _seed_block(self, cx: int, cy: int, radius: int = 2) -> dict[tuple[int, int], Optional[int]]:
+        """Codici dei semi nel blocco ``(2r+1)^2`` centrato su ``(cx, cy)``.
+
+        ``None`` = cella vuota **o** fuori griglia (per il conteggio dei vicini le
+        due cose sono equivalenti). Una sola scansione, riusata da ``f_here`` e da
+        :meth:`_target_dir`: cosi' il vicinato di ogni cella adiacente si calcola
+        senza rileggere la matrice.
+        """
+        cols, rows = self.matrix.cols, self.matrix.rows
+        block: dict[tuple[int, int], Optional[int]] = {}
+        for dy in range(-radius, radius + 1):
+            for dx in range(-radius, radius + 1):
+                x, y = cx + dx, cy + dy
+                if 0 <= x < cols and 0 <= y < rows:
+                    seed = self.matrix.get_seed_at(x, y)
+                    block[(dx, dy)] = None if seed is None else seed.code
+                else:
+                    block[(dx, dy)] = None
+        return block
+
+    def _counts_from_block(
+        self, block: dict[tuple[int, int], Optional[int]], ox: int, oy: int
+    ) -> list[int]:
+        """Semi per tipo nelle 8 celle attorno all'offset ``(ox, oy)`` del blocco."""
+        counts = [0] * self.seed_types
+        for ey in (-1, 0, 1):
+            for ex in (-1, 0, 1):
+                if ex == 0 and ey == 0:
+                    continue
+                code = block.get((ox + ex, oy + ey))
+                if code is not None:
+                    counts[code] += 1
+        return counts
+
+    def _target_dir(
+        self,
+        block: dict[tuple[int, int], Optional[int]],
+        neigh: list,
+        cx: int,
+        cy: int,
+        carrying: bool,
+        carried_type: int,
+    ) -> int:
+        """Direzione relativa (0-7) della cella adiacente piu' promettente, ``STAY`` se nessuna.
+
+        E' il **gradiente locale** che permette alla formica di navigare, e vale in
+        entrambe le fasi:
+
+        - **trasporta** -> la cella *vuota* i cui vicini sono piu' dello stesso tipo
+          del seme in mano (un posto dove posare **bene**). Puntare invece a una
+          cella che *contiene* gia' un seme simile e' inutile: li' non si puo' posare.
+        - **libera** -> la cella con il seme piu' **fuori posto** (frazione di simili
+          intorno piu' bassa), cioe' quello che conviene raccogliere.
+
+        Senza questo segnale la formica libera non ha alcuna informazione sul campo
+        e il suo movimento degenera in un riflesso fisso su heading/celle bloccate.
+        """
+        best_index, best_score = STAY, None
+        for index, p in enumerate(neigh):
+            if p is None:
+                continue
+            ox, oy = p.x - cx, p.y - cy
+            code = block[(ox, oy)]
+            if carrying:
+                if code is not None:  # c'e' gia' un seme: non ci si puo' posare
+                    continue
+                if (p.x, p.y) in self._ant_cells:
+                    continue
+                counts = self._counts_from_block(block, ox, oy)
+                total = sum(counts)
+                if total == 0:
+                    continue
+                score = counts[carried_type] / total
+            else:
+                if code is None:  # niente da raccogliere
+                    continue
+                counts = self._counts_from_block(block, ox, oy)
+                total = sum(counts)
+                if total == 0:
+                    continue
+                score = 1.0 - counts[code] / total
+            if best_score is None or score > best_score:
+                best_score, best_index = score, index
+        return best_index
+
     def observe(self, ant: Ant) -> Observation:
         x, y = ant.position.x, ant.position.y
         carrying = ant.carried_seed is not None
         carried_type = ant.carried_seed.code if carrying else 0
-        seed_here = self.matrix.has_seed(x, y)
-        counts = self.matrix.count_types_around(x, y, self.seed_types)
+        seed_here_obj = self.matrix.get_seed_at(x, y)
+        seed_here = seed_here_obj is not None
+        seed_here_type = seed_here_obj.code if seed_here_obj is not None else 0
+
+        block = self._seed_block(x, y)
+        counts = self._counts_from_block(block, 0, 0)
         total = sum(counts) or 1
         f_here = tuple(c / total for c in counts)
 
@@ -138,23 +243,13 @@ class Environment:
         blocked = tuple(
             (p is None) or ((p.x, p.y) in self._ant_cells) for p in neigh
         )
-
-        best_dir = STAY
-        if carrying:
-            # proxy a basso costo: prima cella adiacente che contiene gia' un seme
-            # del tipo trasportato (8 letture, non 8 scansioni di vicinato).
-            for idx, p in enumerate(neigh):
-                if p is None:
-                    continue
-                seed = self.matrix.get_seed_at(p.x, p.y)
-                if seed is not None and seed.code == carried_type:
-                    best_dir = idx
-                    break
+        best_dir = self._target_dir(block, neigh, x, y, carrying, carried_type)
 
         return Observation(
             carrying=carrying,
             carried_type=carried_type,
             seed_here=seed_here,
+            seed_here_type=seed_here_type,
             can_pick=(not carrying) and seed_here,
             can_drop=carrying and not seed_here,
             f_here=f_here,
@@ -193,29 +288,37 @@ class Environment:
         x0, y0 = ant.position.x, ant.position.y
         info: dict[str, object] = {}
 
-        # --- relevanza per la ricompensa (calcolata PRIMA di mutare la cella) ---
-        f_relevant = 0.0
-        if action.manipulation == Manipulation.PICK and ant.carried_seed is None and self.matrix.has_seed(x0, y0):
-            code = self.matrix.get_seed_at(x0, y0).code
-            counts = self.matrix.count_types_around(x0, y0, self.seed_types)
-            f_relevant = counts[code] / (sum(counts) or 1)
-        elif action.manipulation == Manipulation.DROP and ant.carried_seed is not None and not self.matrix.has_seed(x0, y0):
-            code = ant.carried_seed.code
-            counts = self.matrix.count_types_around(x0, y0, self.seed_types)
-            f_relevant = counts[code] / (sum(counts) or 1)
-
         # --- manipolazione ---
         manip_attempted = action.manipulation != Manipulation.NOOP
         manip_success = False
-        if action.manipulation == Manipulation.PICK and ant.carried_seed is None and self.matrix.has_seed(x0, y0):
+        will_pick = (
+            action.manipulation == Manipulation.PICK
+            and ant.carried_seed is None
+            and self.matrix.has_seed(x0, y0)
+        )
+        will_drop = (
+            action.manipulation == Manipulation.DROP
+            and ant.carried_seed is not None
+            and not self.matrix.has_seed(x0, y0)
+        )
+
+        # frazione di vicini dello stesso tipo del seme manipolato, PRIMA di mutare
+        f_own = 0.0
+        if will_pick or will_drop:
+            code = self.matrix.get_seed_at(x0, y0).code if will_pick else ant.carried_seed.code
+            counts = self.matrix.count_types_around(x0, y0, self.seed_types)
+            f_own = counts[code] / (sum(counts) or 1)
+
+        if will_pick:
             seed = self.matrix.commit_pick(x0, y0)
             if seed is not None:
                 ant.carried_seed = seed
                 self.seeds_collected += 1
                 manip_success = True
-        elif action.manipulation == Manipulation.DROP and ant.carried_seed is not None and not self.matrix.has_seed(x0, y0):
+        elif will_drop:
             if self.matrix.commit_drop(x0, y0, ant.carried_seed):
                 ant.carried_seed = None
+                self.drops_done += 1
                 manip_success = True
 
         # --- movimento ---
@@ -226,9 +329,10 @@ class Environment:
             manip_success=manip_success,
             moved=moved,
             contested=contested,
-            f_relevant=f_relevant,
+            manipulation=action.manipulation,
+            f_own=f_own,
         )
-        reward = self._reward(action, info)
+        reward = self._reward(info)
         return StepResult(reward=reward, done=False, info=info)
 
     def _apply_move(self, ant: Ant, move_index: int) -> tuple[bool, bool]:
@@ -277,7 +381,7 @@ class Environment:
         self._ant_cells.add((nx, ny))
         return True
 
-    def _reward(self, action: Action, info: dict[str, object]) -> float:
+    def _reward(self, info: dict[str, object]) -> float:
         cfg = self.reward_cfg
         reward = -cfg.step_penalty
         if info["contested"]:
@@ -285,12 +389,12 @@ class Environment:
         if info["manip_attempted"] and not info["manip_success"]:
             reward -= cfg.invalid_penalty
         if info["manip_success"]:
-            f_rel = float(info["f_relevant"])
-            if action.manipulation == Manipulation.PICK:
-                # bene se il seme era isolato dai suoi simili (f_own basso)
-                reward += cfg.manip_scale * (cfg.pivot - f_rel)
-            else:  # DROP: bene se posato tra i suoi simili (f_own alto)
-                reward += cfg.manip_scale * (f_rel - cfg.pivot)
+            f_own = float(info["f_own"])
+            if info["manipulation"] == Manipulation.PICK:
+                # bene se il seme era isolato dai suoi simili (f_own sotto il caso)
+                reward += cfg.manip_scale * (self.pivot - f_own)
+            else:  # DROP: bene se posato accanto ai suoi simili (f_own sopra il caso)
+                reward += cfg.manip_scale * (f_own - self.pivot)
         return reward
 
     # ------------------------------------------------------------------ #

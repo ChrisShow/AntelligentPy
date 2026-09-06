@@ -18,6 +18,7 @@ test = ["pytest>=8"]
 [project.scripts]
 antelligent = "antelligent.starter:main"
 antelligent-train = "antelligent.train:main"
+antelligent-train-lumer = "antelligent.train_lumer:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

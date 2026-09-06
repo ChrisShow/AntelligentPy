@@ -19,6 +19,7 @@ _DEFAULTS = dict(
     max_iterations=50,
     entropy_threshold=5.0,
     master_seed=123,
+    capture_screenshots=False,
 )
 
 

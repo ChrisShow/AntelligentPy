@@ -84,6 +84,8 @@ def _run_episode(policy: TabularQPolicy, config: SimulationConfig, seed: int, ma
         "final_entropy": env.entropy,
         "moves": env.total_moves,
         "seeds": env.seeds_collected,
+        "drops": env.drops_done,
+        "carried_left": env.carried_count,
     }
 
 
@@ -98,10 +100,17 @@ def train(args: argparse.Namespace) -> None:
         epsilon_decay_episodes=args.epsilon_decay or max(1, args.episodes * 3 // 4),
         learn_move=not args.no_learn_move,
         learn_manip=not args.no_learn_manip,
+        allow_stay=args.allow_stay,
     )
     policy = TabularQPolicy(config.seed_types, q_config)
     policy.rng.seed(args.seed)
-    reward_cfg = RewardConfig()
+    reward_cfg = RewardConfig(
+        step_penalty=args.step_penalty,
+        contested_penalty=args.contested_penalty,
+        invalid_penalty=args.invalid_penalty,
+        manip_scale=args.manip_scale,
+        pivot=args.pivot,
+    )
 
     max_ticks = args.max_ticks or config.max_iterations
     out_path = Path(args.out)
@@ -120,7 +129,9 @@ def train(args: argparse.Namespace) -> None:
             "initial_entropy": round(stats["initial_entropy"], 3),
             "final_entropy": round(stats["final_entropy"], 3),
             "moves": stats["moves"],
-            "seeds": stats["seeds"],
+            "picks": stats["seeds"],
+            "drops": stats["drops"],
+            "carried_left": stats["carried_left"],
             "epsilon": round(policy.epsilon, 4),
             "elapsed_s": round(time.monotonic() - start, 1),
         }
@@ -129,7 +140,8 @@ def train(args: argparse.Namespace) -> None:
             print(
                 f"ep {episode:4d}  ticks {stats['ticks']:5d}  "
                 f"H0 {stats['initial_entropy']:5.1f} -> H {stats['final_entropy']:5.1f}  "
-                f"moves {stats['moves']:7d}  seeds {stats['seeds']:5d}  eps {policy.epsilon:.3f}"
+                f"moves {stats['moves']:7d}  picks {stats['seeds']:5d}  drops {stats['drops']:5d}  "
+                f"carried {stats['carried_left']:4d}  eps {policy.epsilon:.3f}"
             )
 
     policy.save(out_path)
@@ -154,6 +166,18 @@ def main() -> None:
                         help="ogni quanti tick ricalcolare l'entropia (per l'arresto/log)")
     parser.add_argument("--alpha", type=float, default=0.1)
     parser.add_argument("--gamma", type=float, default=0.95)
+    parser.add_argument("--step-penalty", type=float, default=0.01,
+                        help="penalita' per tick (RewardConfig)")
+    parser.add_argument("--contested-penalty", type=float, default=0.05,
+                        help="penalita' per destinazione occupata (RewardConfig)")
+    parser.add_argument("--invalid-penalty", type=float, default=0.05,
+                        help="penalita' per pick/drop non valido (RewardConfig)")
+    parser.add_argument("--manip-scale", type=float, default=1.0,
+                        help="peso del segnale di manipolazione pick/drop (RewardConfig)")
+    parser.add_argument("--pivot", type=float, default=None,
+                        help="soglia di f_own (default: livello del caso 1/seedTypes) (RewardConfig)")
+    parser.add_argument("--allow-stay", action="store_true",
+                        help="lascia all'RL l'azione 'resta fermo' (sconsigliato: punto fisso assorbente)")
     parser.add_argument("--epsilon-start", type=float, default=0.30)
     parser.add_argument("--epsilon-end", type=float, default=0.02)
     parser.add_argument("--epsilon-decay", type=int, default=0,
