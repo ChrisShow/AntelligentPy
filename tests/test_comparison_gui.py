@@ -186,3 +186,27 @@ def test_clocks_freeze_after_both_copies_are_done(gui) -> None:
     assert all("conclusa" in text for text in frozen), frozen
     _pump(gui, 1.3)  # oltre un giro del timer a 1 Hz
     assert [p.stat_time.cget("text") for p in gui._panes] == frozen
+
+
+def test_the_stats_panel_shows_the_iteration_count(gui) -> None:
+    """Un'iterazione = un giro di ``tick()``, cioe' una mossa per ogni formica."""
+    for pane in gui._panes:
+        assert pane.stat_iterations.cget("text") == "0"
+
+    assert _run_to_completion(gui), "le run non sono terminate in tempo"
+
+    for pane in gui._panes:
+        assert pane.env.iterations > 0
+        assert pane.stat_iterations.cget("text") == str(pane.env.iterations)
+
+
+def test_results_file_records_the_iterations_of_both_copies(gui, tmp_path) -> None:
+    assert _run_to_completion(gui), "le run non sono terminate in tempo"
+
+    rows = (tmp_path / "results.txt").read_text(encoding="utf-8").strip().splitlines()
+    header, records = rows[0].split(";"), [r.split(";") for r in rows[1:]]
+    mode_col, iter_col = header.index("mode"), header.index("iterazioni")
+    written = {r[mode_col]: int(r[iter_col]) for r in records}
+
+    assert written == {p.mode: p.env.iterations for p in gui._panes}
+    assert all(value > 0 for value in written.values())

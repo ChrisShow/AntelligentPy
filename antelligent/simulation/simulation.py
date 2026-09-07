@@ -3,7 +3,8 @@
 Una sola finestra con **due griglie gemelle** (stesso ``master_seed``), i pulsanti
 Start/Visibility condivisi in basso e, sotto ciascuna griglia, il pannello
 statistiche della rispettiva copia: tempo (aggiornato **1 volta al secondo**),
-mosse totali, semi raccolti, entropia totale.
+iterazioni (un giro completo di tutte le formiche), mosse totali, semi raccolti,
+entropia totale.
 
 I due ambienti girano su **due thread worker indipendenti**; Tkinter viene toccato
 solo dal thread principale via ``root.after``.
@@ -72,6 +73,7 @@ class _Pane:
         self.policy = policy
         self.canvas: Optional[tk.Canvas] = None
         self.stat_time: Optional[ttk.Label] = None
+        self.stat_iterations: Optional[ttk.Label] = None
         self.stat_moves: Optional[ttk.Label] = None
         self.stat_seeds: Optional[ttk.Label] = None
         self.stat_entropy: Optional[ttk.Label] = None
@@ -188,9 +190,10 @@ class ComparisonSimulation:
             stats = ttk.Frame(self._toplevel, padding=(6, 4))
             stats.grid(row=2, column=col, sticky="ew")
             pane.stat_time = self._add_stat(stats, 0, _TIME_ROW_LABEL.get(pane.mode, "tempo"))
-            pane.stat_moves = self._add_stat(stats, 1, "mosse totali")
-            pane.stat_seeds = self._add_stat(stats, 2, "semi raccolti")
-            pane.stat_entropy = self._add_stat(stats, 3, "entropia totale")
+            pane.stat_iterations = self._add_stat(stats, 1, "iterazioni")
+            pane.stat_moves = self._add_stat(stats, 2, "mosse totali")
+            pane.stat_seeds = self._add_stat(stats, 3, "semi raccolti")
+            pane.stat_entropy = self._add_stat(stats, 4, "entropia totale")
 
         controls = ttk.Frame(self._toplevel)
         controls.grid(row=3, column=0, columnspan=len(self._panes), pady=8)
@@ -326,6 +329,7 @@ class ComparisonSimulation:
             try:
                 pane.stat_time.config(text=self._time_text(pane),
                                       foreground=_STATUS_COLOR[pane.status])
+                pane.stat_iterations.config(text=f"{pane.env.iterations}")
                 pane.stat_moves.config(text=f"{pane.env.total_moves}")
                 pane.stat_seeds.config(text=f"{pane.env.seeds_collected}")
                 pane.stat_entropy.config(text=f"{pane.env.entropy:.1f}")

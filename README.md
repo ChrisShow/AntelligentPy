@@ -126,8 +126,13 @@ python -m antelligent                               # GUI di confronto affiancat
 
 Il launcher di configurazione apre una finestra con le due griglie affiancate,
 `EURISTICA` a sinistra e `RL` a destra, i pulsanti Start e Visibility condivisi in
-basso e, sotto ciascuna griglia, il pannello statistiche della copia: tempo, mosse
-totali, semi raccolti, entropia totale.
+basso e, sotto ciascuna griglia, il pannello statistiche della copia: tempo,
+iterazioni, mosse totali, semi raccolti, entropia totale.
+
+Un'iterazione è un giro completo della colonia, cioè un turno di mossa per ogni
+formica. Non coincide con `mosse totali / formiche`: le mosse contano solo gli
+spostamenti riusciti, e una formica che trova occupate tutte le celle adiacenti
+resta ferma senza saltare il turno.
 
 Le due run sono sequenziali. Ogni copia ha il proprio cronometro etichettato
 (`tempo euristica`, `tempo RL`) che segnala lo stato (`in attesa`, `in corso`,
@@ -327,7 +332,8 @@ foreach ($s in 1..20) {
 
 Tutto finisce in `results/`, che è git-ignored:
 
-- `results.txt`, CSV con due righe per run (`heuristic` e `rl`), campi
+- `results.txt`, CSV con due righe per run (`heuristic` e `rl`), con `iterazioni`
+  e `mosseTotali` per entrambe le politiche; campi
   `timestamp;mode;durataMs;iterazioni;righe;colonne;thread;formiche;semi;mosseTotali;semiRaccolti;entropiaIniziale;entropiaFinale;masterSeed;tipo`;
 - `training_log.csv`, una riga per episodio di addestramento;
 - `policy.pkl`, la politica addestrata caricata dalla GUI;
