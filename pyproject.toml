@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "antelligent"
 version = "3.0.0"
-description = "Simulazione ant-based di clustering/sorting: confronto euristica pre-impostata vs reinforcement learning (tesi magistrale)."
+description = "Simulazione ant-based di clustering/sorting: confronto euristica pre-impostata vs reinforcement learning."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "GPL-3.0-or-later" }

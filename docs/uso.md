@@ -4,7 +4,7 @@ Passi dettagliati per far girare il progetto. I comandi assumono **Windows +
 PowerShell** e di trovarsi nella cartella `AntelligentPy/`.
 
 ```powershell
-cd C:\Users\crist\OneDrive\Documenti\Tesi\AntelligentPy
+cd C:\percorso\alla\cartella\AntelligentPy
 ```
 
 ---
@@ -87,7 +87,7 @@ captureScreenshots=0     # 1 = salva schermate periodiche in results/screenshots
 > finestra"** nel launcher (sezione *Opzioni*). È **disattivata di default**: la
 > cattura (`ImageGrab`) blocca il thread della GUI a ogni scatto e su macOS
 > richiede il permesso *Impostazioni di Sistema → Privacy e sicurezza →
-> Registrazione schermo*. Attivala solo quando ti servono le immagini per la tesi.
+> Registrazione schermo*. Attivala solo quando ti servono davvero le immagini.
 
 Puoi modificarlo a mano oppure dal campo corrispondente nel launcher.
 
@@ -385,7 +385,7 @@ valutazione. Quattro letture:
    `19.9 / 22.1 / 13.6 / 18.1 / 18.0`: **non è monotono**, e la varianza fra seed di
    addestramento (13.6 / 13.1 / 19.5 con lo stesso `--drop-scale 2`) è dello stesso
    ordine dello sweep. `2` è il punto migliore *misurato*, non un ottimo dimostrato:
-   per la tesi va rifatto con più repliche.
+   il confronto va rifatto con più repliche.
 3. **Le due ablazioni patologiche si vedono.** `--mode raw` (segnale mai negativo)
    produce **4330 pick** contro 310: è il *churn* previsto, raccogli-e-riposa senza
    criterio. `--decline-two-sided` (rendita di posizione) fa perdere 0/10.
@@ -462,7 +462,7 @@ Serve un **display grafico** (non funziona via SSH/headless).
 
 ---
 
-## 5. Il lavoro sperimentale (tesi)
+## 5. Il lavoro sperimentale
 
 Le "manopole" per gli esperimenti di `docs/rl-design.md` §5-§8:
 

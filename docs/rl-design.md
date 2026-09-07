@@ -1,6 +1,6 @@
-# Antelligent RL — documento di progetto
+# Antelligent RL: documento di progetto
 
-Documento di progetto per la **tesi magistrale**. Il focus è il confronto tra:
+Il focus è il confronto tra:
 
 - **`heuristic`** — la versione attuale: matrice normale con lock, movimento e
   raccolta/deposito guidati da un **algoritmo probabilistico pre-impostato**
@@ -195,7 +195,7 @@ Implementazioni:
 - **`train.py`** — harness **headless** (senza Tk): esegue molti episodi, aggiorna
   la politica, logga le curve di apprendimento, salva la politica addestrata
   (`policy.pkl` per la tabella / `policy.pt` per la rete) insieme a config e
-  metadati. È qui che si producono i risultati statistici della tesi.
+  metadati. È qui che si producono i risultati statistici del confronto.
 - **GUI** — dopo l'addestramento, mostra le due copie **affiancate** (§4.5),
   ciascuna con la propria politica **congelata** in **sola inferenza** (greedy,
   nessun apprendimento). La politica congelata è read-only ⇒ thread-safe.

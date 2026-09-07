@@ -7,8 +7,8 @@ Diario di bordo del progetto (dal più recente in alto), a partire dal 2 settemb
   *perché*, *quali file*.
 - **`[RISULTATI]`** — esiti degli esperimenti (run di addestramento, run di
   confronto euristica vs RL, ablazioni): scenario, comandi usati, numeri, grafici
-  e osservazioni. Serve a ricostruire l'evoluzione del lavoro e a riportare i
-  dati nella tesi magistrale.
+  e osservazioni. Serve a ricostruire l'evoluzione del lavoro e a ritrovare i
+  dati quando servono.
 
 **Template `[MODIFICA]`:**
 
@@ -38,6 +38,44 @@ Diario di bordo del progetto (dal più recente in alto), a partire dal 2 settemb
 **Osservazioni.** cosa se ne ricava, confronto con l'euristica, anomalie.
 **Follow-up.** cosa provare dopo.
 ```
+
+---
+
+## 2026-09-07 — [MODIFICA] README riscritto per capitoli, riferimenti al contesto accademico rimossi
+
+**Richiesta.** Togliere da tutti i file `.md` e dai commenti del codice ogni
+riferimento al progetto precedente e al contesto accademico, lasciandone una sola
+riga in testa al `README.md`. Riscrivere il `README.md` diviso in capitoli:
+progetto, obiettivi, architettura, installazione, funzionamento, risultati.
+
+**Modifiche.**
+
+- **`README.md`** — riscritto da zero con i sei capitoli richiesti. Il materiale
+  che c'era prima è tutto lì, ridistribuito: la variante Lumer-Faieta sta sotto
+  "Funzionamento", i numeri e le cautele sotto "Risultati". Aggiunta una tabella
+  con le sei domande di ricerca in "Obiettivi", che prima stavano solo in
+  `docs/rl-design.md`. Una riga in corsivo sotto il titolo è l'unica menzione del
+  contesto accademico.
+- **`docs/rl-design.md`** — tolta la riga di intestazione sul contesto; in §4.4 i
+  "risultati statistici della tesi" sono diventati "del confronto".
+- **`docs/uso.md`** — il percorso di esempio in §0 non è più quello personale;
+  tolti i due rimandi in §2 (screenshot) e §3bis (repliche); §5 si chiama ora
+  "Il lavoro sperimentale".
+- **`resume.md`** — quattro rimandi tolti dalle voci esistenti. La voce del
+  2026-09-05 parlava per intero del progetto di origine: riscritta come pulizia
+  di commenti e docstring, che è quello che il diff conteneva davvero.
+- **`pyproject.toml`** — tolta la parentesi finale dalla `description`.
+
+**File.** `README.md`, `docs/rl-design.md`, `docs/uso.md`, `resume.md`,
+`pyproject.toml`.
+
+**Test.** `pytest` → **123 passed**. Nessun file `.py` toccato: i commenti e le
+docstring del codice erano già puliti dalla passata del 2026-09-05.
+
+**Note / follow-up.** Il testo dei file `.md` è stato riscritto passando dallo
+skill `humanizer` (niente lineette lunghe nella prosa, meno grassetto decorativo,
+niente frasi di chiusura che ripetono il paragrafo). Il codice non è stato
+toccato.
 
 ---
 
@@ -115,7 +153,7 @@ la GUI lo usa, e chi sbaglia file riceve un warning esplicito.
 (nuovo §3bis), questo `resume.md`. **Nulla del percorso precedente è stato
 toccato**: `environment.py`, `policies/tabular.py` e `train.py` sono invariati.
 
-`docs/rl-design.md` **non** è stato aggiornato (è materiale di tesi): §3.3 va
+`docs/rl-design.md` **non** è stato aggiornato: §3.3 va
 esteso con questa seconda formulazione della ricompensa e §6.2 con le nuove
 ablazioni (`--mode`, `--decline-two-sided`, `--wall-penalty`, sweep di
 `--drop-scale`). Da fare alla prossima revisione del documento.
@@ -164,7 +202,7 @@ escursione molto diversa: il pick arriva a `+1.0` (seme isolato), il drop solo a
 `2·(1/1.3)² − 1 = +0.18` — un quinto. Senza riequilibrio la politica impara molto
 meglio *quando raccogliere* che *dove posare*. Da qui il default `drop_scale = 2`.
 
-**Cautele da riportare in tesi.**
+**Cautele da tenere presenti.**
 - Lo sweep `--drop-scale 1.0/1.5/2/3/4` dà `19.9 / 22.1 / 13.6 / 18.1 / 18.0`:
   **non monotono**. La varianza fra seed di addestramento (13.6 / 13.1 / 19.5 con
   lo stesso `--drop-scale 2`) è dello stesso ordine dello sweep: `2` è il punto
@@ -274,8 +312,8 @@ sopra il riferimento casuale (33.4 contro 69.2), ma **resta dietro all'euristica
 203). Il divario residuo è la domanda di ricerca di Fase 1: probabile che serva il
 reward shaping potenziale globale (`docs/rl-design.md` §3.3) e/o il bonus terminale
 `final_scale`, tuttora non collegato. Da valutare anche `inference_epsilon` come
-iperparametro da riportare nella tesi (non è un trucco: è la controparte stocastica
-dell'euristica).
+iperparametro da documentare: è la controparte stocastica dell'euristica, non un
+trucco.
 
 ---
 
@@ -477,33 +515,25 @@ e la nuova telemetria pick/drop/carried. `final_scale` ancora non collegato.
 
 ---
 
-## 2026-09-05 — [MODIFICA] Pulizia dei riferimenti al progetto Java e alla tesi triennale
+## 2026-09-05 — [MODIFICA] Pulizia di commenti, docstring e documentazione
 
-**Obiettivo.** Presentare `AntelligentPy` come lavoro autonomo per la tesi
-magistrale: rimuovere da commenti/docstring del codice e da tutti i file `.md`
-ogni riferimento al progetto Java di origine e alla tesi triennale.
+**Obiettivo.** Rendere commenti, docstring e file `.md` autonomi: ogni modulo
+descrive quello che fa, senza rimandi a materiale esterno al repository.
 
 **Modifiche.**
 
-- **Docstring dei moduli** — tolto il "port di ``X.java``" da `config.py`,
-  `launcher.py`, `starter.py`, `__init__.py`, `seeds/seed.py`,
+- **Docstring dei moduli** — riscritte con una descrizione autonoma in
+  `config.py`, `launcher.py`, `starter.py`, `__init__.py`, `seeds/seed.py`,
   `seeds/seed_type.py`, `utilities/position.py`, `utilities/check_move.py`,
   `simulation/ant.py`, `simulation/seed_matrix.py`,
-  `simulation/lock_seed_matrix.py`, `simulation/simulation_result.py` e dai test
-  `test_check_move.py`, `test_seed_type.py`, `test_seed_matrix.py`. Sostituito con
-  una descrizione autonoma del modulo.
-- **Commenti interni** — `lock_seed_matrix.py` (niente più `ReentrantLock`,
-  `ConcurrentLinkedQueue`, `Collections.synchronizedList`, `CustomMatrix`,
-  `seeds[posY][posX]`, `new ReentrantLock(true)`); `check_move.py` (niente più
-  "identiche al Java", `randomMove`, `do/while`); `seed_matrix.py` (niente più
-  "Nel Java … NaN", "Fedele al Java"); `environment.py`, `policies/heuristic.py`
-  (tolto "versione plain" / "vecchio ``Ant.__call__``"); `config.py`
-  ("continuità" → "compatibilità" del formato).
-- **File `.md`** — `README.md`, `docs/rl-design.md` (rimosso il punto
-  "Continuità con la tesi triennale", gli "scenari ripresi dalla triennale", i
-  rimandi alla triennale negli sviluppi futuri e nei riferimenti),
-  `docs/uso.md` (riscritta la nota sul `results.txt` con intestazione diversa
-  senza parlare di "versione vecchia"), questo `resume.md` (voce baseline).
+  `simulation/lock_seed_matrix.py`, `simulation/simulation_result.py` e nei test
+  `test_check_move.py`, `test_seed_type.py`, `test_seed_matrix.py`.
+- **Commenti interni** — ripuliti dai rimandi esterni in `lock_seed_matrix.py`,
+  `check_move.py`, `seed_matrix.py`, `environment.py` e `policies/heuristic.py`.
+  In `config.py` la "continuità" del formato è diventata "compatibilità".
+- **File `.md`** — `README.md`, `docs/rl-design.md` e `docs/uso.md` rivisti di
+  conseguenza; la nota su `results.txt` in `docs/uso.md` riscritta con
+  un'intestazione diversa.
 
 **File.** `antelligent/{__init__,config,launcher,starter,environment}.py`,
 `antelligent/seeds/{seed,seed_type}.py`,
@@ -513,11 +543,9 @@ ogni riferimento al progetto Java di origine e alla tesi triennale.
 `tests/{test_check_move,test_seed_type,test_seed_matrix}.py`, `README.md`,
 `docs/rl-design.md`, `docs/uso.md`, `resume.md`.
 
-**Test.** `pytest -q` → **36 passed** (solo commenti/docstring toccati).
+**Test.** `pytest -q` → **36 passed** (toccati solo commenti e docstring).
 
-**Note / follow-up.** Nessuna modifica di comportamento. Il progetto Java resta
-in `../Antelligent/` come riferimento storico personale, ma non è più citato dal
-codice o dalla documentazione del port.
+**Note / follow-up.** Nessuna modifica di comportamento.
 
 ---
 
@@ -616,8 +644,8 @@ costruzione GUI + tick sincroni.
 
 **Note / follow-up (Fase 2, da `docs/rl-design.md` §5-§8).**
 - La Q-learning tabellare *impara* ma **non batte ancora l'euristica**: è atteso
-  per la Fase 1. Tuning di `RewardConfig` / `QConfig` + più episodi = lavoro
-  sperimentale della tesi.
+  per la Fase 1. Tuning di `RewardConfig` / `QConfig` e più episodi restano il
+  lavoro sperimentale da fare.
 - Da fare: reward shaping potenziale/incrementale globale; Fase 2 deep RL
   (DQN/PPO, dipendenza `torch` opzionale); warm start per imitazione; campagna
   sperimentale completa con test appaiati.

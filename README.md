@@ -1,136 +1,97 @@
-# Antelligent — euristica vs Reinforcement Learning
+# Antelligent: euristica vs reinforcement learning
 
-Progetto per la **tesi magistrale**. La stessa colonia di formiche che fa
-**clustering/sorting** ant-based di semi colorati su una griglia viene fatta
-girare in **due copie gemelle e inizialmente identiche** dello stesso campo
-(stesso `master_seed`):
+*Sviluppato nell'ambito di una tesi di laurea magistrale.*
 
-- **euristica** — movimento e raccolta/deposito guidati dall'algoritmo
-  probabilistico pre-impostato (regole di Lumer–Faieta, costanti fisse);
-- **RL** — le formiche **imparano** movimento e pick/drop con reinforcement
-  learning, usando l'**entropia del sistema** come costo da minimizzare.
+## Progetto
 
-Documento di progetto completo: [`docs/rl-design.md`](docs/rl-design.md).
+Una colonia di formiche ordina semi colorati su una griglia con il classico
+schema ant-based di clustering e sorting: una formica raccoglie un seme dove ne
+trova pochi dello stesso tipo e lo posa dove ne trova tanti. Il campo viene fatto
+girare in due copie che partono identiche (stesso `master_seed`), una per ciascuna
+politica:
 
-## Come si usa
+- **euristica**: movimento e raccolta/deposito decisi dall'algoritmo probabilistico
+  di Lumer-Faieta, con costanti fisse `kp` e `kd`;
+- **RL**: le formiche imparano quando muoversi e quando raccogliere o posare, con
+  l'entropia del sistema come costo da minimizzare.
 
-```bash
-python -m venv .venv && .venv\Scripts\activate     # Windows
-pip install -e ".[test]"
+L'entropia misura quanto i semi di un tipo sono mescolati agli altri: più scende,
+più il campo è diviso in gruppi omogenei. È la metrica su cui le due politiche
+vengono confrontate.
 
-python -m antelligent.train --episodes 400          # addestra la politica RL -> results/policy.pkl
-python -m antelligent.train_lumer --episodes 400    # variante: ricompensa alla Lumer-Faieta
-python -m antelligent                               # GUI di confronto affiancato
-pytest                                              # test
-```
+Documento di progetto: [`docs/rl-design.md`](docs/rl-design.md). Guida d'uso
+dettagliata: [`docs/uso.md`](docs/uso.md). Diario delle modifiche e degli
+esperimenti: [`resume.md`](resume.md).
 
-### GUI di confronto (`python -m antelligent`)
+## Obiettivi
 
-Launcher di configurazione → una finestra con le **due griglie affiancate**
-(`EURISTICA` a sinistra, `RL` a destra), i pulsanti **Start** / **Visibility**
-condivisi in basso e, **sotto ciascuna griglia**, il pannello statistiche della
-copia: **tempo** (aggiornato una volta al secondo), **mosse totali**, **semi
-raccolti**, **entropia totale**.
+Le domande a cui il confronto deve rispondere:
 
-Le due run sono **sequenziali**: parte prima l'euristica, e l'RL solo quando la
-prima ha concluso. Ogni copia ha il proprio cronometro etichettato (`tempo
-euristica` / `tempo RL`) che riporta lo stato — `in attesa`, `in corso`,
-`conclusa` — e si **ferma** sul valore finale a fine run. Così il wall-clock di
-ciascuna politica è misurato senza contesa del GIL con l'altra griglia.
-
-Il pannello RL carica `results/policy.pkl` se presente (inferenza greedy,
-congelata); altrimenti la politica **apprende dal vivo** durante la run (utile per
-vedere l'RL migliorare, ma i risultati veri vanno prodotti con `train.py`).
-
-### Addestramento (`python -m antelligent.train`)
-
-Harness headless: molti episodi su campo rigenerato ogni volta, salva la politica
-(`results/policy.pkl`) e le curve di apprendimento (`results/training_log.csv`).
-Opzioni principali: `--episodes`, `--config`, `--out`, `--seed`, `--max-ticks`,
-`--alpha --gamma --epsilon-start --epsilon-end`, i pesi della ricompensa
-`--step-penalty --contested-penalty --invalid-penalty --manip-scale --pivot`, e
-per le ablazioni `--no-learn-move` (A2: movimento euristico) / `--no-learn-manip`
-(A1: pick/drop euristico) / `--allow-stay`.
-
-> `--pivot` è tarato automaticamente sul **livello del caso** `1/seedTypes`, e la
-> testa del movimento **non** può scegliere di restare ferma (`allow_stay=False`).
-> Entrambi i default evitano che la politica congelata si blocchi: vedi
-> [`docs/uso.md` §5](docs/uso.md).
-
-### Variante sperimentale: ricompensa alla Lumer-Faieta (`python -m antelligent.train_lumer`)
-
-Seconda formulazione della ricompensa, in **file separati** (l'impianto sopra
-resta invariato e continua a funzionare). Invece di misurare la manipolazione
-rispetto al livello del caso `1/k`, la misura con le **stesse funzioni di
-probabilità che governano l'euristica**: `P_pick = (kp/(kp+f))²`,
-`P_drop = (f/(kd+f))²`. L'euristica *campiona* da quelle probabilità; qui
-diventano un **segnale denso** che l'agente impara a sfruttare.
-
-Tre contributi, tutti pesabili da riga di comando:
-
-| contributo | flag | a cosa serve |
+| | Domanda | Come si misura |
 |---|---|---|
-| azione | `--pick-scale` `--drop-scale` | quanto vale raccogliere / posare **in quel punto** |
-| rifiuto | `--decline-scale` | informa anche il braccio "non manipolare" (l'euristica *estrae* fra agire e non agire) |
-| navigazione | `--shaping-scale` | shaping potenziale `F = γΦ(s′) − Φ(s)` con `Φ` = probabilità LF nella cella: premia **avvicinarsi** a un buon punto di deposito |
-
-Lo zero del segnale non è arbitrario. Il default `--mode centered` lo mette a
-`P = 0.5` (per il drop: `f > 0.72`, una soglia molto **selettiva**);
-`--mode advantage` lo mette in `f* = √(kp·kd) ≈ 0.173`, il punto in cui
-`P_pick = P_drop`, cioè dove l'euristica stessa è indifferente.
-
-**È la prima configurazione che batte l'euristica**: su `config.properties`,
-400 episodi, 10 `master_seed` di valutazione, entropia finale **13.6 ± 2.5**
-contro **25.5 ± 1.9** dell'euristica — più bassa su **10 seed su 10**. La leva
-decisiva è `--drop-scale 2` (default): in modalità `centered` il segnale di
-deposito ha un quinto dell'escursione di quello di raccolta, quindi senza
-riequilibrio la politica impara meglio *quando raccogliere* che *dove posare*.
-Tabelle, ablazioni e caveat in [`docs/uso.md` §3bis](docs/uso.md).
+| RQ1 | A parità di budget di iterazioni, l'RL arriva a un'entropia finale minore dell'euristica? | Entropia finale su una griglia di scenari, con test appaiati sullo stesso `master_seed` |
+| RQ2 | L'RL raggiunge la soglia di entropia in meno iterazioni o meno tempo? | Iterazioni alla soglia, area sotto la curva entropia-iterazioni |
+| RQ3 | Il guadagno viene dal movimento appreso, dalla manipolazione appresa o da entrambi? | Ablazioni A1 (solo movimento), A2 (solo manipolazione), A3 (entrambi) |
+| RQ4 | La politica generalizza a scenari mai visti in addestramento? | Addestramento su una configurazione, test su densità e dimensioni diverse |
+| RQ5 | L'RL apprende qualcosa di qualitativamente diverso dall'euristica? | Curve pick/drop apprese, tasso di contesa sulle celle, heatmap |
+| RQ6 | Quanto costa l'RL rispetto al beneficio? | Curve di apprendimento, wall-clock di addestramento, dimensione della tabella |
 
 ## Architettura
 
 ```
 antelligent/
-├── __main__.py / starter.py     entry point, config.properties round-trip
+├── __main__.py / starter.py     entry point, round-trip di config.properties
 ├── launcher.py                  form di configurazione (tkinter)
-├── config.py  paths.py  world.py   config + percorsi + stato iniziale condiviso (master_seed)
-├── actions.py                   Action / Observation / Transition / Manipulation
-├── environment.py               Environment: observe(), step(), tick(); fisica di occupazione
-│                                celle (try_acquire + ripiego sulla contesa), contatori, entropia
+├── config.py  paths.py  world.py   config, percorsi, stato iniziale condiviso
+├── actions.py                   Action, Observation, Transition, Manipulation
+├── environment.py               observe(), step(), tick(), occupazione delle celle,
+│                                contatori, entropia
 ├── policies/
-│   ├── base.py                  AntPolicy (il "seam")
-│   ├── heuristic.py             HeuristicPolicy — regole pre-impostate (baseline A0)
-│   ├── tabular.py               TabularQPolicy — Q-learning fattorizzato a parametri condivisi (Fase 1)
-│   └── lumer_tabular.py         LumerQPolicy — variante LF (stato manip. riallineato) + load_policy
-├── lumer_reward.py              formule pure P_pick/P_drop -> ricompensa, punto di indifferenza f*
-├── environment_lumer.py         LumerFaietaEnvironment — Environment con la ricompensa LF
+│   ├── base.py                  AntPolicy, il "seam" fra corpo e cervello
+│   ├── heuristic.py             HeuristicPolicy: regole pre-impostate (baseline A0)
+│   ├── tabular.py               TabularQPolicy: Q-learning fattorizzato a parametri condivisi
+│   └── lumer_tabular.py         LumerQPolicy: variante LF, più il dispatch load_policy
+├── lumer_reward.py              formule pure P_pick/P_drop, punto di indifferenza f*
+├── environment_lumer.py         LumerFaietaEnvironment: Environment con la ricompensa LF
 ├── train.py                     harness headless di addestramento
 ├── train_lumer.py               idem, per la variante Lumer-Faieta
 ├── simulation/
-│   ├── seed_matrix.py           SeedMatrix (ABC): primitive + probabilita' Lumer–Faieta + entropia
-│   ├── lock_seed_matrix.py      matrice normale + un lock di occupazione per cella
-│   ├── ant.py                   la formica come "corpo" (posizione, heading, seme trasportato)
-│   ├── simulation.py            ComparisonSimulation — GUI a due griglie gemelle
-│   ├── results_dialog.py  simulation_result.py
-├── seeds/  utilities/  resources/images/
-docs/rl-design.md                obiettivi, metriche, protocollo, sviluppi futuri
+│   ├── seed_matrix.py           SeedMatrix (ABC): primitive, probabilità LF, entropia
+│   ├── lock_seed_matrix.py      matrice con un lock di occupazione per cella
+│   ├── ant.py                   la formica come corpo: posizione, heading, seme in mano
+│   ├── simulation.py            ComparisonSimulation: GUI a due griglie gemelle
+│   └── results_dialog.py  simulation_result.py
+└── seeds/  utilities/  resources/images/
+docs/rl-design.md                obiettivi, metriche, protocollo sperimentale
 tests/                           pytest
 ```
 
-Il *seam* `AntPolicy` separa il **corpo** della formica (fisica, invariata) dal
-suo **cervello** (la politica). Lo stesso `Environment` serve sia l'euristica sia
-l'RL: cambia solo la politica passata a `tick()`.
+Il seam `AntPolicy` separa il corpo della formica, che è fisica e resta invariato,
+dal suo cervello, che è la politica. Lo stesso `Environment` serve entrambe le
+politiche: cambia solo l'oggetto passato a `tick()`.
 
-> **Thread.** Ogni ambiente gira su un thread worker, ma **uno alla volta**: la
-> copia RL parte solo quando l'euristica ha concluso, così il tempo di ciascuna è
-> confrontabile. La semantica dei lock di cella (contesa, `try_acquire`,
-> occupazione esclusiva) resta invariata. I worker **non toccano mai Tkinter**
-> (che non è thread-safe): accodano eventi su una `queue.Queue` che il thread
-> principale drena a 50 ms. L'addestramento è single-thread.
+**Thread.** Ogni ambiente gira su un thread worker, ma uno alla volta: la copia RL
+parte quando l'euristica ha finito, così il tempo di ciascuna è confrontabile. I
+worker non toccano mai Tkinter, che non è thread-safe; accodano eventi su una
+`queue.Queue` che il thread principale drena ogni 50 ms. L'addestramento è
+single-thread.
 
-## Configurazione
+## Installazione
 
-`config.properties` (formato `chiave=valore`, riscritto dal launcher):
+Serve Python 3.11 o superiore.
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate          # Windows;  su macOS/Linux: source .venv/bin/activate
+pip install -e ".[test]"
+pytest
+```
+
+Senza `pip install`, i comandi `python -m antelligent ...` funzionano solo dalla
+cartella `AntelligentPy/`.
+
+La configurazione sta in `config.properties`, formato `chiave=valore`, riscritto
+dal launcher a ogni avvio:
 
 ```properties
 cols=40
@@ -140,43 +101,130 @@ nAnts=100
 nSeeds=650
 seedTypes=5
 type=1                   # matrice normale con lock
-refreshRate=500          # iterazioni tra un repaint della board e il successivo
+refreshRate=500          # iterazioni fra un repaint della board e il successivo
 stopCriterion=1          # 0 = numero massimo di iterazioni, 1 = soglia di entropia
 maxIterations=20000
 entropyThreshold=5.0
 masterSeed=0             # 0 = stato iniziale casuale a ogni run
-captureScreenshots=0     # 1 = salva schermate periodiche (casella "Opzioni" nel launcher)
+captureScreenshots=0     # 1 = salva schermate periodiche
 ```
 
-Vincoli del launcher: `nSeeds <= righe*colonne` e `nAnts <= righe*colonne`.
+Il launcher richiede `nSeeds <= righe*colonne` e `nAnts <= righe*colonne`.
 
-## Output
+## Funzionamento
 
-`results/` (git-ignored):
+```bash
+python -m antelligent.train --episodes 400          # addestra la politica RL
+python -m antelligent.train_lumer --episodes 400    # variante con ricompensa Lumer-Faieta
+python -m antelligent                               # GUI di confronto affiancato
+```
 
-- `results/results.txt` — CSV, **due righe per run** (mode `heuristic` / `rl`) con
-  timestamp, durata, iterazioni, mosse totali, semi raccolti, entropia
-  iniziale/finale, `masterSeed`;
-- `results/training_log.csv` — una riga per episodio di addestramento;
-- `results/policy.pkl` — politica RL addestrata;
-- `results/policy_lumer.pkl` + `results/policy_lumer_log.csv` — variante
-  Lumer-Faieta (il pickle dichiara la propria famiglia: la GUI sceglie da sola la
-  classe giusta, quindi puoi salvarla direttamente come `results/policy.pkl`);
-- `results/screenshots/<data-ora>/` — screenshot periodici della finestra, **solo
-  se** la casella "Cattura schermate della finestra" è flaggata nel launcher
-  (`captureScreenshots=1`); di default la cattura è disattivata.
+### GUI di confronto
 
-## Stato
+Il launcher di configurazione apre una finestra con le due griglie affiancate,
+`EURISTICA` a sinistra e `RL` a destra, i pulsanti Start e Visibility condivisi in
+basso e, sotto ciascuna griglia, il pannello statistiche della copia: tempo,
+mosse totali, semi raccolti, entropia totale.
 
-- Fase 1 (`docs/rl-design.md` §5.1): **Q-learning tabellare** implementato e
-  funzionante. Reward locale allineato all'entropia (§3.3). L'osservazione include
-  un **gradiente locale** (`best_dir`) che indica dove raccogliere / dove posare, e
-  la politica congelata mantiene un rumore residuo (`inference_epsilon`) senza il
-  quale, su stati aliasati, cadrebbe in cicli limite — vedi `docs/uso.md` §5.
-- Su `config.properties` (14×14, 130 semi, 5 tipi), 10 `master_seed`: euristica
-  H ≈ 25.5, RL con ricompensa al livello del caso H ≈ 38.8, **RL con ricompensa
-  alla Lumer-Faieta H ≈ 13.6** (più bassa dell'euristica su 10 seed su 10).
-  La variante LF include anche il primo pezzo di **reward shaping potenziale**.
-- Da fare: campagna con più repliche di addestramento (la varianza fra seed è
-  dello stesso ordine dello sweep di `--drop-scale`), shaping incrementale
-  globale, Fase 2 deep RL (DQN/PPO), warm start per imitazione (§6, §8).
+Le due run sono sequenziali. Ogni copia ha il proprio cronometro etichettato
+(`tempo euristica`, `tempo RL`) che segnala lo stato (`in attesa`, `in corso`,
+`conclusa`) e si ferma sul valore finale. Così il wall-clock di ciascuna politica
+è misurato senza contesa del GIL con l'altra griglia.
+
+Il pannello RL carica `results/policy.pkl` se esiste, in inferenza greedy
+congelata. Se il file manca, la politica apprende dal vivo durante la run: serve
+a vedere l'RL migliorare, ma i numeri da riportare si producono con `train.py`.
+
+### Addestramento
+
+`python -m antelligent.train` esegue molti episodi su un campo rigenerato ogni
+volta, salva la politica in `results/policy.pkl` e le curve di apprendimento in
+`results/training_log.csv`. Opzioni principali: `--episodes`, `--config`, `--out`,
+`--seed`, `--max-ticks`, `--alpha --gamma --epsilon-start --epsilon-end`, i pesi
+della ricompensa `--step-penalty --contested-penalty --invalid-penalty
+--manip-scale --pivot`, e per le ablazioni `--no-learn-move` (A2, movimento
+euristico), `--no-learn-manip` (A1, pick/drop euristico), `--allow-stay`.
+
+`--pivot` è tarato sul livello del caso `1/seedTypes`, e la testa del movimento
+non può scegliere di restare ferma (`allow_stay=False`). Entrambi i default
+servono a impedire che la politica congelata si blocchi: il motivo è spiegato in
+[`docs/uso.md` §5](docs/uso.md).
+
+### Variante con ricompensa Lumer-Faieta
+
+`python -m antelligent.train_lumer` usa una seconda formulazione della ricompensa,
+in file separati, che lascia intatto l'impianto precedente. Invece di misurare la
+manipolazione rispetto al livello del caso `1/k`, la misura con le stesse funzioni
+di probabilità che governano l'euristica: `P_pick = (kp/(kp+f))²` e
+`P_drop = (f/(kd+f))²`. L'euristica campiona da quelle probabilità; qui diventano
+un segnale denso che l'agente impara a sfruttare.
+
+Tre contributi, tutti pesabili da riga di comando:
+
+| contributo | flag | a cosa serve |
+|---|---|---|
+| azione | `--pick-scale` `--drop-scale` | quanto vale raccogliere o posare in quel punto |
+| rifiuto | `--decline-scale` | informa anche il braccio "non manipolare", visto che l'euristica estrae fra agire e non agire |
+| navigazione | `--shaping-scale` | shaping potenziale `F = γΦ(s′) − Φ(s)` con `Φ` = probabilità LF nella cella, per premiare l'avvicinarsi a un buon punto di deposito |
+
+Lo zero del segnale si può spostare. Il default `--mode centered` lo mette a
+`P = 0.5`, che per il deposito vuol dire `f > 0.72`, una soglia molto selettiva.
+`--mode advantage` lo mette in `f* = √(kp·kd) ≈ 0.173`, il punto in cui
+`P_pick = P_drop` e l'euristica stessa è indifferente.
+
+### Output
+
+Tutto finisce in `results/`, che è git-ignored:
+
+- `results.txt`, CSV con due righe per run (`heuristic` e `rl`): timestamp,
+  durata, iterazioni, mosse totali, semi raccolti, entropia iniziale e finale,
+  `masterSeed`;
+- `training_log.csv`, una riga per episodio di addestramento;
+- `policy.pkl`, la politica addestrata caricata dalla GUI;
+- `policy_lumer.pkl` e `policy_lumer_log.csv` per la variante LF. Il pickle
+  dichiara la propria famiglia, quindi la GUI sceglie da sola la classe giusta e
+  puoi salvare il file direttamente come `results/policy.pkl`;
+- `screenshots/<data-ora>/`, schermate periodiche della finestra, solo se la
+  casella "Cattura schermate della finestra" è flaggata nel launcher.
+
+## Risultati
+
+Su `config.properties` (14×14, 130 semi, 5 tipi), 400 episodi di addestramento e
+10 `master_seed` di valutazione, entropia finale media:
+
+| politica | entropia finale | seed vinti su 10 |
+|---|---|---|
+| euristica | 25.5 ± 1.9 | riferimento |
+| RL, ricompensa al livello del caso `1/k` | 38.8 ± 1.9 | 0 |
+| RL, ricompensa Lumer-Faieta | **13.6 ± 2.5** | 10 |
+
+La variante Lumer-Faieta è la prima configurazione che scende sotto l'euristica, e
+lo fa su tutti e dieci i seed di valutazione. La leva decisiva è `--drop-scale 2`,
+che è il default: in modalità `centered` il segnale di deposito ha un quinto
+dell'escursione di quello di raccolta, quindi senza riequilibrio la politica impara
+meglio quando raccogliere che dove posare.
+
+Tre cautele sui numeri, tutte misurate:
+
+- lo sweep di `--drop-scale` su `1.0 / 1.5 / 2 / 3 / 4` dà
+  `19.9 / 22.1 / 13.6 / 18.1 / 18.0`, che non è monotono;
+- la varianza fra seed di addestramento (13.6, 13.1, 19.5 con lo stesso
+  `--drop-scale 2`) è dello stesso ordine dello sweep, quindi `2` è il punto
+  migliore misurato e non un ottimo dimostrato;
+- 800 episodi danno un risultato peggiore di 400 (21.7 contro 13.6): con ε già
+  decaduto la politica smette di esplorare e deriva.
+
+Tabelle complete, ablazioni e note metodologiche in
+[`docs/uso.md` §3bis](docs/uso.md).
+
+### Stato del lavoro
+
+La Fase 1 (`docs/rl-design.md` §5.1), Q-learning tabellare, è implementata e
+funziona. L'osservazione include un gradiente locale (`best_dir`) che indica dove
+raccogliere e dove posare, e la politica congelata mantiene un rumore residuo
+(`inference_epsilon`) senza il quale, su stati aliasati, cadrebbe in cicli limite.
+La variante LF include anche il primo pezzo di reward shaping potenziale.
+
+Restano da fare: una campagna con più repliche di addestramento, lo shaping
+incrementale globale, la Fase 2 con deep RL (DQN o PPO) e un warm start per
+imitazione.
