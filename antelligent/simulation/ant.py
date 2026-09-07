@@ -1,6 +1,6 @@
 """La formica come "corpo".
 
-Dopo la rifattorizzazione per l'RL (``docs/rl-design.md`` §4.2) la formica non
+Dopo la rifattorizzazione per l'RL la formica non
 contiene piu' logica di decisione: posizione, heading e seme trasportato sono
 stato puro. Le decisioni sono della politica (``policies/``), l'applicazione
 (mosse, pick/drop, lock di cella, contesa) e' dell'ambiente (``environment.py``).

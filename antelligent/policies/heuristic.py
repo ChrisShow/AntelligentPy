@@ -1,4 +1,4 @@
-"""Politica euristica pre-impostata (baseline A0), ``docs/rl-design.md`` §4.1.
+"""Politica euristica pre-impostata (baseline A0).
 
 Applica l'algoritmo probabilistico pre-impostato: probabilita' di pick/drop di
 Lumer-Faieta `(kp/(kp+f))^2`, `(f/(kd+f))^2` (via

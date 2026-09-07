@@ -1,4 +1,4 @@
-"""Harness headless di addestramento (``docs/rl-design.md`` §4.3, §5.1).
+"""Harness headless di addestramento.
 
 Addestra una :class:`TabularQPolicy` a parametri condivisi su molti episodi (campo
 rigenerato a ogni episodio), salva la politica e il log delle curve di

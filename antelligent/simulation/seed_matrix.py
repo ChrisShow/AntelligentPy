@@ -1,6 +1,6 @@
 """Logica di dominio della matrice condivisa.
 
-La classe espone due livelli (vedi ``docs/rl-design.md`` §4.2):
+La classe espone due livelli:
 
 - **primitive meccaniche** — accesso alla cella, lock di occupazione,
   ``count_types_around``, ``commit_pick`` / ``commit_drop`` (mutazioni

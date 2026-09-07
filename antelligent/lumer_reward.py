@@ -59,8 +59,8 @@ DROP = "drop"
 NONE = ""
 
 #: Modalita' di trasformazione delle probabilita' in ricompensa (vedi
-#: :func:`manip_value`). ``centered`` e' il default *misurato* (vedi ``docs/uso.md``
-#: §3bis-g); ``advantage`` ha lo zero nel punto di indifferenza di Lumer-Faieta;
+#: :func:`manip_value`). ``centered`` e' il default *misurato*; ``advantage`` ha
+#: lo zero nel punto di indifferenza di Lumer-Faieta;
 #: ``raw`` non e' centrata e serve come ablazione (porta al churn).
 MODES = ("advantage", "centered", "raw")
 

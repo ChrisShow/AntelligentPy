@@ -290,7 +290,7 @@ def test_from_initial_state_carries_the_lumer_config() -> None:
 
 def test_drop_scale_weighs_the_placement_more_than_the_pickup() -> None:
     cfg = LumerRewardConfig(drop_scale=2.0, shaping_scale=0.0)
-    assert LumerRewardConfig().drop_scale == 2.0  # default misurato (docs/uso.md §3bis-g)
+    assert LumerRewardConfig().drop_scale == 2.0  # default misurato (vedi README)
     env = _env(1, 4, seed_cells=[(0, 0, 1), (1, 0, 0), (3, 0, 0)], ant_cells=[(2, 0)], lumer=cfg)
     ant = env.ants[0]
     ant.carried_seed = Seed(SeedType.BLUE)

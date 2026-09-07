@@ -1,7 +1,4 @@
-"""Politiche delle formiche: euristica pre-impostata vs reinforcement learning.
-
-Vedi ``docs/rl-design.md`` §4.1 (il "seam" ``AntPolicy``) e §5 (algoritmi).
-"""
+"""Politiche delle formiche: euristica pre-impostata vs reinforcement learning."""
 
 from .base import AntPolicy, AntPolicyBase
 from .heuristic import HeuristicPolicy

@@ -1,4 +1,4 @@
-"""Q-learning tabellare a parametri condivisi (Fase 1, ``docs/rl-design.md`` §5.1).
+"""Q-learning tabellare a parametri condivisi (Fase 1).
 
 Una sola politica per tutte le formiche. Q fattorizzata in due tabelle:
 

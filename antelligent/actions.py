@@ -1,4 +1,4 @@
-"""Tipi condivisi tra ambiente e politiche (vedi ``docs/rl-design.md`` §3).
+"""Tipi condivisi tra ambiente e politiche.
 
 Sia l'euristica sia l'RL producono la stessa :class:`Action`; l'ambiente
 (``environment.py``) la applica in modo identico per entrambe.

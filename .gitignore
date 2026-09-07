@@ -34,6 +34,13 @@ target/
 .idea/
 *.iml
 
+# --- Documenti di lavoro personali (fuori dal repo pubblico) ---
+# Documento di progetto, guida d'uso estesa e diario di bordo: quel che serve a
+# chi usa il progetto sta nel README.
+docs/rl-design.md
+docs/uso.md
+resume.md
+
 # --- Nessun riferimento all'assistente AI nel repo pubblico ---
 CLAUDE.md
 CLAUDE.local.md

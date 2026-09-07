@@ -1,4 +1,4 @@
-"""Ambiente di simulazione, comune a euristica e RL (``docs/rl-design.md`` §3.4, §4.2).
+"""Ambiente di simulazione, comune a euristica e RL.
 
 Un :class:`Environment` possiede una matrice, le formiche e i semi di **una**
 copia del campo. Espone:
@@ -43,7 +43,7 @@ _CELL_OUT = -2
 
 @dataclass
 class RewardConfig:
-    """Pesi della ricompensa locale (``docs/rl-design.md`` §3.3). L'euristica li ignora.
+    """Pesi della ricompensa locale. L'euristica li ignora.
 
     La manipolazione e' premiata *rispetto a* ``pivot`` (frazione di vicini dello
     stesso tipo del seme manipolato): raccogliere un seme isolato dai suoi simili

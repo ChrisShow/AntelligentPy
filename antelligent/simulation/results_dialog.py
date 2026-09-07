@@ -1,4 +1,4 @@
-"""Schermata dei risultati finali (confronto affiancato), ``docs/rl-design.md`` §4.5."""
+"""Schermata dei risultati finali (confronto affiancato)."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""GUI di confronto affiancato euristica vs RL (``docs/rl-design.md`` §4.5).
+"""GUI di confronto affiancato euristica vs RL.
 
 Una sola finestra con **due griglie gemelle** (stesso ``master_seed``), i pulsanti
 Start/Visibility condivisi in basso e, sotto ciascuna griglia, il pannello
@@ -150,7 +150,7 @@ class ComparisonSimulation:
             except Exception:  # noqa: BLE001
                 _LOGGER.warning("impossibile caricare %s, uso apprendimento live", rl_policy_path, exc_info=True)
         # nessuna politica addestrata: il pannello RL impara dal vivo durante la run
-        # (unico thread che tocca la tabella -> sicuro). Vedi docs/rl-design.md §4.5.
+        # (unico thread che tocca la tabella -> sicuro).
         _LOGGER.warning(
             "nessuna politica RL addestrata (%s): il pannello RL apprende dal vivo. "
             "Genera una politica con: python -m antelligent.train",

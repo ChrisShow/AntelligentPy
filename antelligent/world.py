@@ -1,4 +1,4 @@
-"""Stato iniziale condiviso dalle due copie gemelle (``docs/rl-design.md`` §1, §4.3).
+"""Stato iniziale condiviso dalle due copie gemelle.
 
 Da un solo ``master_seed`` si genera un unico :class:`InitialState` (posizioni dei
 semi, celle e heading di partenza delle formiche); poi ``Environment`` lo

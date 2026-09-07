@@ -1,4 +1,4 @@
-"""Interfaccia comune delle politiche (``docs/rl-design.md`` §4.1)."""
+"""Interfaccia comune delle politiche."""
 
 from __future__ import annotations
 
